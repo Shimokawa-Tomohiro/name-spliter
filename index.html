@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI姓名分割ツール</title>
+    <style>
+        body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; background-color: #f9fafb; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; }
+        label { display: block; margin-top: 15px; font-weight: bold; color: #555; }
+        input { width: 100%; padding: 12px; margin-top: 5px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 12px; margin-top: 20px; background-color: #2563eb; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+        button:hover { background-color: #1d4ed8; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #result { margin-top: 25px; padding: 15px; background: #eff6ff; border-radius: 6px; display: none; }
+        .result-item { font-size: 1.1rem; margin: 5px 0; }
+        .error { color: #dc2626; background: #fef2f2 !important; }
+        .credits { display: block; text-align: right; margin-top: 10px; font-size: 0.9rem; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>AI姓名分割ツール</h2>
+        <p style="text-align: center; color: #666;">PINコードを入力してAIを利用できます</p>
+        
+        <label>PINコード</label>
+        <input type="text" id="pin" placeholder="例: TEST-1234">
+        
+        <label>分割したい氏名</label>
+        <input type="text" id="name" placeholder="例: 徳川家康">
+        
+        <button id="btn" onclick="splitName()">分割を実行する</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function splitName() {
+            const pin = document.getElementById('pin').value;
+            const name = document.getElementById('name').value;
+            const resultDiv = document.getElementById('result');
+            const btn = document.getElementById('btn');
+            
+            if(!pin || !name) {
+                alert("PINコードと氏名を入力してください");
+                return;
+            }
+
+            // UIリセット
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = 'AIが考え中...';
+            resultDiv.className = '';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/split', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pin_code: pin, full_name: name })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <div class="result-item"><strong>姓:</strong> ${data.result.last_name}</div>
+                        <div class="result-item"><strong>名:</strong> ${data.result.first_name}</div>
+                        <span class="credits">残り回数: ${data.remaining_credits}回</span>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<strong>エラー:</strong> ${data.detail}`;
+                    resultDiv.className = 'error';
+                }
+            } catch (e) {
+                console.error(e);
+                resultDiv.innerHTML = '通信エラーが発生しました。';
+                resultDiv.className = 'error';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
