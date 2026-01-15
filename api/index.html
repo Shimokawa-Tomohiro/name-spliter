@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI姓名分割ツール Pro</title>
+    <style>
+        body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: #f3f4f6; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: #2563eb; }
+        
+        /* プランカード */
+        .plans { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .card { background: white; padding: 20px; border-radius: 12px; width: 250px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+        .card h3 { margin-top: 0; color: #555; }
+        .price { font-size: 24px; font-weight: bold; color: #2563eb; margin: 10px 0; }
+        .btn-buy { display: inline-block; background-color: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-top: 15px; }
+        .btn-buy:hover { background-color: #1d4ed8; }
+        
+        /* 残高確認 */
+        .checker { background: white; padding: 20px; border-radius: 12px; margin-top: 40px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        input { padding: 10px; border: 1px solid #ddd; border-radius: 6px; width: 60%; font-size: 16px; }
+        button { padding: 10px 20px; background-color: #4b5563; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; }
+        #balance-result { margin-top: 15px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AI姓名分割ツール</h1>
+            <p>スプレッドシートで使える高精度な分割関数。PINコードを購入して今すぐ開始。</p>
+        </header>
+
+        <div class="plans">
+            <div class="card">
+                <h3>スターター</h3>
+                <div class="price">500円</div>
+                <p>100回分</p>
+                <a href="https://buy.stripe.com/test_..." class="btn-buy" target="_blank">購入する</a>
+            </div>
+            <div class="card">
+                <h3>プロ</h3>
+                <div class="price">3,000円</div>
+                <p>1,000回分</p>
+                <p><small>（お買い得）</small></p>
+                <a href="https://buy.stripe.com/test_..." class="btn-buy" target="_blank">購入する</a>
+            </div>
+        </div>
+
+        <div class="checker">
+            <h3>残高・有効性チェック</h3>
+            <input type="text" id="pin-input" placeholder="PINコードを入力 (例: AI-XXXX...)">
+            <button onclick="checkBalance()">確認</button>
+            <div id="balance-result"></div>
+        </div>
+    </div>
+
+    <script>
+        async function checkBalance() {
+            const pin = document.getElementById('pin-input').value;
+            const resDiv = document.getElementById('balance-result');
+            if(!pin) return;
+            
+            resDiv.innerText = "確認中...";
+            try {
+                const res = await fetch(`/api/balance?pin=${pin}`);
+                const data = await res.json();
+                if(data.valid) {
+                    resDiv.innerHTML = `<span style="color:green">有効</span> 残り: ${data.credits}回 (プラン: ${data.plan})`;
+                } else {
+                    resDiv.innerHTML = `<span style="color:red">無効なPINコードです</span>`;
+                }
+            } catch(e) {
+                resDiv.innerText = "エラーが発生しました";
+            }
+        }
+    </script>
+</body>
+</html>
