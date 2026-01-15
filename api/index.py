@@ -110,17 +110,19 @@ async def split_name_post(req: SplitRequest):
     return { "status": "success", "result": ai_result, "remaining_credits": user_data["credits"] - 1 }
 
 # ---------------------------------------------------------
-# 3. GET API (スプレッドシート関数用) ★ここが追加部分
+# 3. GET API (スプレッドシート関数用) ★改良版
 # ---------------------------------------------------------
 @app.get("/api/sheet", response_class=PlainTextResponse)
 async def split_name_sheet(
+    name: str = Query(..., description="分割したい氏名"),
     pin: str = Query(..., description="購入したPINコード"),
-    name: str = Query(..., description="分割したい氏名")
+    target: str = Query("all", description="出力モード: all(両方), last(姓のみ), first(名のみ)")
 ):
     """
-    スプレッドシートの IMPORTDATA関数 で使うためのエンドポイント
-    例: =IMPORTDATA(".../api/sheet?pin=123&name=徳川家康")
-    戻り値: "徳川,家康" (CSV形式)
+    使い方: 
+    姓のみ: /api/sheet?name=徳川家康&target=last&pin=1234
+    名のみ: /api/sheet?name=徳川家康&target=first&pin=1234
+    両方  : /api/sheet?name=徳川家康&pin=1234
     """
     try:
         # PINチェック
@@ -132,9 +134,14 @@ async def split_name_sheet(
         # 消費実行
         supabase.table("user_credits").update({"credits": user_data["credits"] - 1}).eq("id", user_data["id"]).execute()
         
-        # CSV形式 "姓,名" で返す (スプレッドシートが勝手にセル分けしてくれる)
-        return f"{ai_result['last_name']},{ai_result['first_name']}"
+        # ★指定されたモードに応じて返す文字を変える
+        if target == "last":
+            return ai_result['last_name']
+        elif target == "first":
+            return ai_result['first_name']
+        else:
+            # 指定なし(all)の場合はカンマ区切りで両方返す
+            return f"{ai_result['last_name']},{ai_result['first_name']}"
         
     except HTTPException as e:
-        # スプレッドシートのセルにエラーを表示させる
         return f"Error: {e.detail}"
