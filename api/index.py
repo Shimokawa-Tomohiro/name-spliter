@@ -1,7 +1,10 @@
 import os
 import json
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, PlainTextResponse
+import uuid
+import stripe
+import resend
+from fastapi import FastAPI, HTTPException, Query, Request, Header
+from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse
 from pydantic import BaseModel
 from openai import AzureOpenAI
 from supabase import create_client, Client
@@ -14,134 +17,157 @@ SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 AZURE_OPENAI_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT")
 AZURE_DEPLOYMENT_NAME = os.environ.get("AZURE_DEPLOYMENT_NAME")
-AZURE_API_VERSION = "2024-08-01-preview"
+STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 
-# クライアント初期化
+# --- クライアント初期化 ---
 azure_client = AzureOpenAI(
     api_key=AZURE_OPENAI_API_KEY,
-    api_version=AZURE_API_VERSION,
+    api_version="2024-08-01-preview",
     azure_endpoint=AZURE_OPENAI_ENDPOINT
 )
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+stripe.api_key = STRIPE_API_KEY
+resend.api_key = RESEND_API_KEY
 
-# 共通ロジック: PIN確認と残高消費
-def process_payment_and_check_pin(pin_code: str):
+# --- ヘルパー関数: PIN生成 ---
+def generate_pin():
+    # "AI-xxxx-xxxx" のような読みやすいPINを生成
+    return f"AI-{str(uuid.uuid4())[:8].upper()}"
+
+# --- ヘルパー関数: メール送信 ---
+def send_pin_email(to_email: str, pin_code: str, credits: int):
     try:
-        res = supabase.table("user_credits").select("*").eq("pin_code", pin_code).execute()
+        # ※ Resendの無料枠では、Fromは 'onboarding@resend.dev' 固定の場合があります。
+        # 独自ドメイン設定済みの場合はそれを指定してください。
+        resend.Emails.send({
+            "from": "onboarding@resend.dev",
+            "to": to_email,
+            "subject": "【姓名分割AI】PINコードの発行完了",
+            "html": f"""
+            <h2>ご購入ありがとうございます</h2>
+            <p>姓名分割AI関数のPINコードを発行しました。</p>
+            <p><strong>PINコード: {pin_code}</strong></p>
+            <p>利用可能回数: {credits}回</p>
+            <hr>
+            <p>使い方の例:<br>
+            <code>=IMPORTDATA("https://name-spliter.vercel.app/api/sheet?name=" & ENCODEURL(A1) & "&pin={pin_code}")</code>
+            </p>
+            """
+        })
+        print(f"Email sent to {to_email}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail="データベース接続エラー")
-    
-    if not res.data:
-        raise HTTPException(status_code=400, detail="無効なPINコード")
-    
-    user_data = res.data[0]
-    credits = user_data["credits"]
+        print(f"Email Error: {e}")
 
-    if credits <= 0:
-        raise HTTPException(status_code=400, detail="残高ゼロ")
-        
-    return user_data
-
-# 共通ロジック: AI処理
-def run_ai_split(full_name: str):
+# ---------------------------------------------------------
+# 1. 決済連携 (Stripe Webhook)
+# ---------------------------------------------------------
+@app.post("/api/webhook")
+async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
+    payload = await request.body()
+    
     try:
-        chat_completion = azure_client.chat.completions.create(
-            model=AZURE_DEPLOYMENT_NAME,
-            messages=[
-                { "role": "system", "content": "あなたは日本の人名処理システムです。入力された氏名をJSON形式 {'last_name': '姓', 'first_name': '名'} で返してください。" },
-                { "role": "user", "content": full_name }
-            ],
-            response_format={"type": "json_object"}
+        event = stripe.Webhook.construct_event(
+            payload, stripe_signature, STRIPE_WEBHOOK_SECRET
         )
-        return json.loads(chat_completion.choices[0].message.content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.error.SignatureVerificationError as e:
+        raise HTTPException(status_code=400, detail="Invalid signature")
 
-# Request Model for POST
-class SplitRequest(BaseModel):
-    full_name: str
-    pin_code: str
+    # 決済完了イベントのみ処理
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        
+        # 顧客情報の取得
+        customer_email = session.get("customer_details", {}).get("email")
+        amount_total = session.get("amount_total") # 金額でプラン判定も可能
+        
+        # プラン判定ロジック (メタデータまたは金額で判定)
+        # ここでは簡易的に金額で分岐させる例
+        added_credits = 100
+        plan_name = "Standard"
+        
+        # Stripeの商品設定でメタデータに 'credits' を入れておくとベストですが、簡易判定:
+        if amount_total >= 1000: # 例: 1000円以上ならPro
+            added_credits = 1000
+            plan_name = "Pro"
 
-# ---------------------------------------------------------
-# 1. Webブラウザ用 UI (変更なし)
-# ---------------------------------------------------------
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
-    # 前回ご提供したHTMLと同じ内容を返します
-    return """
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <title>AI姓名分割 (Azure版)</title>
-        <style>body{font-family:sans-serif;max-width:600px;margin:2rem auto;padding:1rem;}input,button{width:100%;padding:10px;margin-top:10px;}</style>
-    </head>
-    <body>
-        <h2>AI姓名分割</h2>
-        <input id="pin" placeholder="PINコード"><input id="name" placeholder="氏名">
-        <button onclick="run()">実行</button><div id="res"></div>
-        <script>
-            async function run(){
-                const pin=document.getElementById('pin').value, name=document.getElementById('name').value;
-                document.getElementById('res').innerText = "処理中...";
-                const res = await fetch('/api/split', {
-                    method:'POST', headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({pin_code:pin, full_name:name})
-                });
-                const d = await res.json();
-                document.getElementById('res').innerText = res.ok ? `姓:${d.result.last_name} 名:${d.result.first_name}` : `エラー:${d.detail}`;
-            }
-        </script>
-    </body>
-    </html>
-    """
+        # PIN生成とDB保存
+        new_pin = generate_pin()
+        
+        try:
+            supabase.table("user_credits").insert({
+                "pin_code": new_pin,
+                "credits": added_credits,
+                "email": customer_email,
+                "plan_type": plan_name
+            }).execute()
+            
+            # メール送信
+            send_pin_email(customer_email, new_pin, added_credits)
+            
+        except Exception as e:
+            print(f"DB Insert Error: {e}")
+            return JSONResponse(content={"status": "error"}, status_code=500)
 
-# ---------------------------------------------------------
-# 2. POST API (Web UIや外部アプリ用)
-# ---------------------------------------------------------
-@app.post("/api/split")
-async def split_name_post(req: SplitRequest):
-    user_data = process_payment_and_check_pin(req.pin_code)
-    ai_result = run_ai_split(req.full_name)
-    
-    # 消費
-    supabase.table("user_credits").update({"credits": user_data["credits"] - 1}).eq("id", user_data["id"]).execute()
-    
-    return { "status": "success", "result": ai_result, "remaining_credits": user_data["credits"] - 1 }
+    return {"status": "success"}
 
 # ---------------------------------------------------------
-# 3. GET API (スプレッドシート関数用) ★改良版
+# 2. スプレッドシート用 API (前回と同じ)
 # ---------------------------------------------------------
 @app.get("/api/sheet", response_class=PlainTextResponse)
 async def split_name_sheet(
     name: str = Query(..., description="分割したい氏名"),
     pin: str = Query(..., description="購入したPINコード"),
-    target: str = Query("all", description="出力モード: all(両方), last(姓のみ), first(名のみ)")
+    target: str = Query("all", description="出力モード: all, last, first")
 ):
-    """
-    使い方: 
-    姓のみ: /api/sheet?name=徳川家康&target=last&pin=1234
-    名のみ: /api/sheet?name=徳川家康&target=first&pin=1234
-    両方  : /api/sheet?name=徳川家康&pin=1234
-    """
+    # --- PIN確認 ---
+    res = supabase.table("user_credits").select("*").eq("pin_code", pin).execute()
+    if not res.data:
+        return "Error: 無効なPINコード"
+    
+    user_data = res.data[0]
+    if user_data["credits"] <= 0:
+        return "Error: 残高ゼロ"
+
+    # --- AI実行 ---
     try:
-        # PINチェック
-        user_data = process_payment_and_check_pin(pin)
-        
-        # AI実行
-        ai_result = run_ai_split(name)
-        
-        # 消費実行
-        supabase.table("user_credits").update({"credits": user_data["credits"] - 1}).eq("id", user_data["id"]).execute()
-        
-        # ★指定されたモードに応じて返す文字を変える
-        if target == "last":
-            return ai_result['last_name']
-        elif target == "first":
-            return ai_result['first_name']
-        else:
-            # 指定なし(all)の場合はカンマ区切りで両方返す
-            return f"{ai_result['last_name']},{ai_result['first_name']}"
-        
-    except HTTPException as e:
-        return f"Error: {e.detail}"
+        chat_completion = azure_client.chat.completions.create(
+            model=AZURE_DEPLOYMENT_NAME,
+            messages=[
+                {"role": "system", "content": "入力された氏名をJSON形式 {'last_name': '姓', 'first_name': '名'} で返してください。"},
+                {"role": "user", "content": name}
+            ],
+            response_format={"type": "json_object"}
+        )
+        ai_result = json.loads(chat_completion.choices[0].message.content)
+    except Exception as e:
+        return f"Error: AI処理失敗 {str(e)}"
+
+    # --- 消費 ---
+    supabase.table("user_credits").update({"credits": user_data["credits"] - 1}).eq("id", user_data["id"]).execute()
+
+    # --- 返却 ---
+    if target == "last": return ai_result['last_name']
+    elif target == "first": return ai_result['first_name']
+    else: return f"{ai_result['last_name']},{ai_result['first_name']}"
+
+# ---------------------------------------------------------
+# 3. 残高確認 API
+# ---------------------------------------------------------
+@app.get("/api/balance")
+async def check_balance(pin: str):
+    res = supabase.table("user_credits").select("credits, plan_type").eq("pin_code", pin).execute()
+    if not res.data:
+        return {"valid": False}
+    return {"valid": True, "credits": res.data[0]["credits"], "plan": res.data[0]["plan_type"]}
+
+# ---------------------------------------------------------
+# 4. フロントエンド用 HTML配信
+# ---------------------------------------------------------
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    with open("public/index.html", "r", encoding="utf-8") as f:
+        return f.read()
