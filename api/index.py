@@ -31,16 +31,98 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 stripe.api_key = STRIPE_API_KEY
 resend.api_key = RESEND_API_KEY
 
+# --- HTMLコンテンツ (エラー回避のためここに直接記述) ---
+html_content = """
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI姓名分割ツール Pro</title>
+    <style>
+        body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: #f3f4f6; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: #2563eb; }
+        
+        /* プランカード */
+        .plans { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .card { background: white; padding: 20px; border-radius: 12px; width: 250px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+        .card h3 { margin-top: 0; color: #555; }
+        .price { font-size: 24px; font-weight: bold; color: #2563eb; margin: 10px 0; }
+        .btn-buy { display: inline-block; background-color: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-top: 15px; }
+        .btn-buy:hover { background-color: #1d4ed8; }
+        
+        /* 残高確認 */
+        .checker { background: white; padding: 20px; border-radius: 12px; margin-top: 40px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        input { padding: 10px; border: 1px solid #ddd; border-radius: 6px; width: 60%; font-size: 16px; }
+        button { padding: 10px 20px; background-color: #4b5563; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; }
+        #balance-result { margin-top: 15px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AI姓名分割ツール</h1>
+            <p>スプレッドシートで使える高精度な分割関数。PINコードを購入して今すぐ開始。</p>
+        </header>
+
+        <div class="plans">
+            <div class="card">
+                <h3>スターター</h3>
+                <div class="price">500円</div>
+                <p>100回分</p>
+                <a href="https://buy.stripe.com/test_..." class="btn-buy" target="_blank">購入する</a>
+            </div>
+            <div class="card">
+                <h3>プロ</h3>
+                <div class="price">3,000円</div>
+                <p>1,000回分</p>
+                <p><small>（お買い得）</small></p>
+                <a href="https://buy.stripe.com/test_..." class="btn-buy" target="_blank">購入する</a>
+            </div>
+        </div>
+
+        <div class="checker">
+            <h3>残高・有効性チェック</h3>
+            <input type="text" id="pin-input" placeholder="PINコードを入力 (例: AI-XXXX...)">
+            <button onclick="checkBalance()">確認</button>
+            <div id="balance-result"></div>
+        </div>
+    </div>
+
+    <script>
+        async function checkBalance() {
+            const pin = document.getElementById('pin-input').value;
+            const resDiv = document.getElementById('balance-result');
+            if(!pin) return;
+            
+            resDiv.innerText = "確認中...";
+            try {
+                const res = await fetch(`/api/balance?pin=${pin}`);
+                const data = await res.json();
+                if(data.valid) {
+                    resDiv.innerHTML = `<span style="color:green">有効</span> 残り: ${data.credits}回 (プラン: ${data.plan})`;
+                } else {
+                    resDiv.innerHTML = `<span style="color:red">無効なPINコードです</span>`;
+                }
+            } catch(e) {
+                resDiv.innerText = "エラーが発生しました";
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+
 # --- ヘルパー関数: PIN生成 ---
 def generate_pin():
-    # "AI-xxxx-xxxx" のような読みやすいPINを生成
     return f"AI-{str(uuid.uuid4())[:8].upper()}"
 
 # --- ヘルパー関数: メール送信 ---
 def send_pin_email(to_email: str, pin_code: str, credits: int):
     try:
-        # ※ Resendの無料枠では、Fromは 'onboarding@resend.dev' 固定の場合があります。
-        # 独自ドメイン設定済みの場合はそれを指定してください。
+        # Resendの無料枠はFromアドレスに制限がある場合があります
         resend.Emails.send({
             "from": "onboarding@resend.dev",
             "to": to_email,
@@ -76,25 +158,17 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
     except stripe.error.SignatureVerificationError as e:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # 決済完了イベントのみ処理
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
-        
-        # 顧客情報の取得
         customer_email = session.get("customer_details", {}).get("email")
-        amount_total = session.get("amount_total") # 金額でプラン判定も可能
+        amount_total = session.get("amount_total")
         
-        # プラン判定ロジック (メタデータまたは金額で判定)
-        # ここでは簡易的に金額で分岐させる例
         added_credits = 100
         plan_name = "Standard"
-        
-        # Stripeの商品設定でメタデータに 'credits' を入れておくとベストですが、簡易判定:
-        if amount_total >= 1000: # 例: 1000円以上ならPro
+        if amount_total >= 1000:
             added_credits = 1000
             plan_name = "Pro"
 
-        # PIN生成とDB保存
         new_pin = generate_pin()
         
         try:
@@ -105,7 +179,6 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
                 "plan_type": plan_name
             }).execute()
             
-            # メール送信
             send_pin_email(customer_email, new_pin, added_credits)
             
         except Exception as e:
@@ -115,7 +188,7 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
     return {"status": "success"}
 
 # ---------------------------------------------------------
-# 2. スプレッドシート用 API (前回と同じ)
+# 2. スプレッドシート用 API
 # ---------------------------------------------------------
 @app.get("/api/sheet", response_class=PlainTextResponse)
 async def split_name_sheet(
@@ -165,9 +238,9 @@ async def check_balance(pin: str):
     return {"valid": True, "credits": res.data[0]["credits"], "plan": res.data[0]["plan_type"]}
 
 # ---------------------------------------------------------
-# 4. フロントエンド用 HTML配信
+# 4. フロントエンド配信 (HTMLを直接返す)
 # ---------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    with open("public/index.html", "r", encoding="utf-8") as f:
-        return f.read()
+    # ファイル読み込みをやめて、変数から返す
+    return html_content
