@@ -22,16 +22,19 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 
 # --- クライアント初期化 ---
+# ※ Azure OpenAIの設定を使用しています
 azure_client = AzureOpenAI(
     api_key=AZURE_OPENAI_API_KEY,
     api_version="2024-08-01-preview",
     azure_endpoint=AZURE_OPENAI_ENDPOINT
 )
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 stripe.api_key = STRIPE_API_KEY
 resend.api_key = RESEND_API_KEY
 
 # --- HTMLコンテンツ (エラー回避のためここに直接記述) ---
+# ※ Stripeの商品リンク(href)の部分は、ご自身のリンクに書き換えてください
 html_content = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -122,7 +125,7 @@ def generate_pin():
 # --- ヘルパー関数: メール送信 ---
 def send_pin_email(to_email: str, pin_code: str, credits: int):
     try:
-        # Resendの無料枠はFromアドレスに制限がある場合があります
+        # Resendの設定: 独自ドメイン未設定の場合は onboarding@resend.dev を使用
         resend.Emails.send({
             "from": "onboarding@resend.dev",
             "to": to_email,
@@ -160,18 +163,22 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
 
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
+        
+        # 顧客情報の取得
         customer_email = session.get("customer_details", {}).get("email")
         amount_total = session.get("amount_total")
         
+        # 簡易的なプラン判定（金額ベース）
         added_credits = 100
         plan_name = "Standard"
-        if amount_total >= 1000:
+        if amount_total >= 1000:  # 1000円以上ならプロプラン扱い
             added_credits = 1000
             plan_name = "Pro"
 
         new_pin = generate_pin()
         
         try:
+            # DB保存
             supabase.table("user_credits").insert({
                 "pin_code": new_pin,
                 "credits": added_credits,
@@ -179,6 +186,7 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
                 "plan_type": plan_name
             }).execute()
             
+            # メール送信
             send_pin_email(customer_email, new_pin, added_credits)
             
         except Exception as e:
@@ -197,7 +205,11 @@ async def split_name_sheet(
     target: str = Query("all", description="出力モード: all, last, first")
 ):
     # --- PIN確認 ---
-    res = supabase.table("user_credits").select("*").eq("pin_code", pin).execute()
+    try:
+        res = supabase.table("user_credits").select("*").eq("pin_code", pin).execute()
+    except Exception as e:
+        return "Error: DB Error"
+
     if not res.data:
         return "Error: 無効なPINコード"
     
@@ -205,7 +217,7 @@ async def split_name_sheet(
     if user_data["credits"] <= 0:
         return "Error: 残高ゼロ"
 
-    # --- AI実行 ---
+    # --- AI実行 (Azure OpenAI) ---
     try:
         chat_completion = azure_client.chat.completions.create(
             model=AZURE_DEPLOYMENT_NAME,
@@ -220,7 +232,10 @@ async def split_name_sheet(
         return f"Error: AI処理失敗 {str(e)}"
 
     # --- 消費 ---
-    supabase.table("user_credits").update({"credits": user_data["credits"] - 1}).eq("id", user_data["id"]).execute()
+    try:
+        supabase.table("user_credits").update({"credits": user_data["credits"] - 1}).eq("id", user_data["id"]).execute()
+    except Exception as e:
+        return f"Error: 消費処理失敗 {str(e)}"
 
     # --- 返却 ---
     if target == "last": return ai_result['last_name']
@@ -242,5 +257,5 @@ async def check_balance(pin: str):
 # ---------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    # ファイル読み込みをやめて、変数から返す
+    # 変数に格納したHTMLを返します (ファイル読み込みエラー回避)
     return html_content
