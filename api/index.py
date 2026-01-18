@@ -11,6 +11,12 @@ from supabase import create_client, Client
 
 app = FastAPI()
 
+# =========================================================
+#  ★設定: 本番環境のドメイン
+#  メール通知などで使用されます
+# =========================================================
+MY_DOMAIN = "name-spliter.vercel.app"
+
 # --- 環境変数の読み込み ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
@@ -27,9 +33,6 @@ resend.api_key = RESEND_API_KEY
 
 # =========================================================
 #  フロントエンド (HTML)
-# =========================================================
-# ※ 下記の href="YOUR_STRIPE_LINK_..." の部分を、
-#    ご自身がStripeで作成した支払リンクURLに書き換えてください。
 # =========================================================
 html_content = """
 <!DOCTYPE html>
@@ -162,9 +165,12 @@ html_content = """
 #  バックエンド処理 (FastAPI)
 # =========================================================
 
-# --- メール送信関数 (お問い合わせ先を追加) ---
+# --- メール送信関数 ---
 def send_pin_email(to_email: str, pin_code: str, credits: int, plan_name: str):
     try:
+        # ご指定の形式に合わせて関数を生成
+        sheet_formula = f'=IMPORTDATA("https://{MY_DOMAIN}/api/sheet?name=" & ENCODEURL(A1) & "&pin={pin_code}")'
+        
         # Resendの設定
         resend.Emails.send({
             "from": "onboarding@resend.dev", 
@@ -186,7 +192,7 @@ def send_pin_email(to_email: str, pin_code: str, credits: int, plan_name: str):
                 <h3>使い方（スプレッドシート）</h3>
                 <p>以下の数式をコピーしてセルに貼り付けてください。</p>
                 <code style="display: block; background: #1e293b; color: #e2e8f0; padding: 15px; border-radius: 6px; overflow-x: auto;">
-                    =IMPORTDATA("https://{os.environ.get('name-spliter.vercel.app')}/api/sheet?name=" & ENCODEURL(A1) & "&pin={pin_code}")
+                    {sheet_formula}
                 </code>
                 
                 <br>
@@ -222,9 +228,8 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         session = event['data']['object']
         
         customer_email = session.get("customer_details", {}).get("email")
-        amount_total = session.get("amount_total") # 支払い金額
+        amount_total = session.get("amount_total") 
 
-        # --- 金額によるプラン判定 ---
         if amount_total == 500:
             added_credits = 500
             plan_name = "ライト"
@@ -238,7 +243,6 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
             added_credits = 100
             plan_name = "Unknown"
 
-        # --- PIN発行 (重複回避リトライ付き) ---
         max_retries = 5
         for _ in range(max_retries):
             random_part = str(uuid.uuid4()).replace("-", "")[:12].upper()
