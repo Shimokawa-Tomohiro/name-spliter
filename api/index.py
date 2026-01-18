@@ -218,13 +218,13 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         # --- 金額によるプラン判定 ---
         if amount_total == 500:
             added_credits = 500
-            plan_name = "Light"
+            plan_name = "ライト"
         elif amount_total == 2000:
             added_credits = 3000
-            plan_name = "Standard"
+            plan_name = "スタンダード"
         elif amount_total == 5000:
             added_credits = 10000
-            plan_name = "Business"
+            plan_name = "ビジネス"
         else:
             added_credits = 100
             plan_name = "Unknown"
