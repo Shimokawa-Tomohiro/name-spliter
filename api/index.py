@@ -186,7 +186,7 @@ def send_pin_email(to_email: str, pin_code: str, credits: int, plan_name: str):
                 <h3>使い方（スプレッドシート）</h3>
                 <p>以下の数式をコピーしてセルに貼り付けてください。</p>
                 <code style="display: block; background: #1e293b; color: #e2e8f0; padding: 15px; border-radius: 6px; overflow-x: auto;">
-                    =IMPORTDATA("https://{os.environ.get('VERCEL_URL', 'name-spliter.vercel.app')}/api/sheet?name=" & ENCODEURL(A1) & "&pin={pin_code}")
+                    =IMPORTDATA("https://{os.environ.get('name-spliter.vercel.app')}/api/sheet?name=" & ENCODEURL(A1) & "&pin={pin_code}")
                 </code>
                 
                 <br>
