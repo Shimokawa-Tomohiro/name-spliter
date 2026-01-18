@@ -162,10 +162,10 @@ html_content = """
 #  バックエンド処理 (FastAPI)
 # =========================================================
 
-# --- メール送信関数 ---
+# --- メール送信関数 (お問い合わせ先を追加) ---
 def send_pin_email(to_email: str, pin_code: str, credits: int, plan_name: str):
     try:
-        # Resendの設定: 独自ドメインがある場合は "support@yourdomain.com" などに変更
+        # Resendの設定
         resend.Emails.send({
             "from": "onboarding@resend.dev", 
             "to": to_email,
@@ -188,6 +188,15 @@ def send_pin_email(to_email: str, pin_code: str, credits: int, plan_name: str):
                 <code style="display: block; background: #1e293b; color: #e2e8f0; padding: 15px; border-radius: 6px; overflow-x: auto;">
                     =IMPORTDATA("https://{os.environ.get('VERCEL_URL', 'name-spliter.vercel.app')}/api/sheet?name=" & ENCODEURL(A1) & "&pin={pin_code}")
                 </code>
+                
+                <br>
+                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                
+                <p style="font-size: 0.85rem; color: #64748b;">
+                    【お問い合わせ】<br>
+                    ご不明な点や不具合がございましたら、下記までご連絡ください。<br>
+                    <a href="mailto:shimotomo16@gmail.com" style="color: #3b82f6; text-decoration: none;">shimotomo16@gmail.com</a>
+                </p>
             </div>
             """
         })
