@@ -26,7 +26,7 @@ stripe.api_key = STRIPE_API_KEY
 resend.api_key = RESEND_API_KEY
 
 # =========================================================
-#  フロントエンド (HTML) - 3段階プランUI
+#  フロントエンド (HTML)
 # =========================================================
 # ※ 下記の href="YOUR_STRIPE_LINK_..." の部分を、
 #    ご自身がStripeで作成した支払リンクURLに書き換えてください。
@@ -42,96 +42,52 @@ html_content = """
         body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: #f8fafc; color: #334155; margin: 0; padding: 0; }
         .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
         
-        /* ヘッダー */
         header { text-align: center; margin-bottom: 50px; }
         h1 { color: #0f172a; font-size: 2.5rem; margin-bottom: 10px; }
         .subtitle { font-size: 1.1rem; color: #64748b; }
 
-        /* プラン表示エリア */
         .plans { 
-            display: flex; 
-            gap: 20px; 
-            justify-content: center; 
-            flex-wrap: wrap; 
-            align-items: flex-start; /* 高さを揃えない（おすすめを目立たせるため） */
+            display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; align-items: flex-start;
         }
         
         .card { 
-            background: white; 
-            padding: 30px 20px; 
-            border-radius: 16px; 
-            width: 260px; 
-            text-align: center; 
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); 
-            transition: transform 0.2s;
-            position: relative;
-            border: 1px solid #e2e8f0;
+            background: white; padding: 30px 20px; border-radius: 16px; width: 260px; text-align: center; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); transition: transform 0.2s; position: relative; border: 1px solid #e2e8f0;
         }
-        
         .card:hover { transform: translateY(-5px); }
 
-        /* おすすめプランの強調スタイル */
         .card.recommended { 
-            border: 2px solid #3b82f6; 
-            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.2);
-            transform: scale(1.05);
-            z-index: 10;
+            border: 2px solid #3b82f6; box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.2); transform: scale(1.05); z-index: 10;
         }
         .card.recommended:hover { transform: scale(1.08); }
         
         .badge {
-            background-color: #3b82f6;
-            color: white;
-            position: absolute;
-            top: -12px;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: bold;
+            background-color: #3b82f6; color: white; position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+            padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: bold;
         }
 
-        /* 文字スタイル */
         .plan-name { font-size: 1.25rem; font-weight: bold; color: #334155; margin-bottom: 10px; }
         .price { font-size: 2rem; font-weight: 800; color: #0f172a; margin: 10px 0; }
         .unit { font-size: 1rem; font-weight: normal; color: #64748b; }
         .desc { color: #64748b; font-size: 0.95rem; margin-bottom: 25px; min-height: 40px;}
         
-        /* ボタン */
         .btn-buy { 
-            display: block; 
-            width: 100%; 
-            padding: 12px 0; 
-            border-radius: 8px; 
-            text-decoration: none; 
-            font-weight: bold; 
-            transition: opacity 0.2s;
-            box-sizing: border-box;
+            display: block; width: 100%; padding: 12px 0; border-radius: 8px; text-decoration: none; font-weight: bold; transition: opacity 0.2s; box-sizing: border-box;
         }
         .btn-plain { background-color: #f1f5f9; color: #334155; }
         .btn-plain:hover { background-color: #e2e8f0; }
-        
         .btn-primary { background-color: #3b82f6; color: white; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3); }
         .btn-primary:hover { background-color: #2563eb; }
 
-        /* 残高確認エリア */
         .checker { 
-            background: white; 
-            max-width: 500px;
-            margin: 60px auto 0;
-            padding: 30px; 
-            border-radius: 12px; 
-            text-align: center; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
-            border: 1px solid #e2e8f0;
+            background: white; max-width: 500px; margin: 60px auto 0; padding: 30px; border-radius: 12px; text-align: center; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;
         }
         .input-group { display: flex; gap: 10px; margin-top: 20px; }
         input { flex: 1; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 16px; outline: none; }
         input:focus { border-color: #3b82f6; }
         .btn-check { padding: 0 20px; background-color: #334155; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
         #balance-result { margin-top: 20px; font-weight: bold; min-height: 1.5em; }
-
     </style>
 </head>
 <body>
@@ -209,8 +165,7 @@ html_content = """
 # --- メール送信関数 ---
 def send_pin_email(to_email: str, pin_code: str, credits: int, plan_name: str):
     try:
-        # Resendの設定: 独自ドメイン未設定の場合は onboarding@resend.dev を使用
-        # 独自ドメインがある場合は "support@yourdomain.com" などに変更
+        # Resendの設定: 独自ドメインがある場合は "support@yourdomain.com" などに変更
         resend.Emails.send({
             "from": "onboarding@resend.dev", 
             "to": to_email,
@@ -251,4 +206,48 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         )
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        
+        customer_email = session.get("customer_details", {}).get("email")
+        amount_total = session.get("amount_total") # 支払い金額
+
+        # --- 金額によるプラン判定 ---
+        if amount_total == 500:
+            added_credits = 500
+            plan_name = "Light"
+        elif amount_total == 2000:
+            added_credits = 3000
+            plan_name = "Standard"
+        elif amount_total == 5000:
+            added_credits = 10000
+            plan_name = "Business"
+        else:
+            added_credits = 100
+            plan_name = "Unknown"
+
+        # --- PIN発行 (重複回避リトライ付き) ---
+        max_retries = 5
+        for _ in range(max_retries):
+            random_part = str(uuid.uuid4()).replace("-", "")[:12].upper()
+            new_pin = f"AI-{random_part}"
+            
+            try:
+                supabase.table("user_credits").insert({
+                    "pin_code": new_pin,
+                    "credits": added_credits,
+                    "email": customer_email,
+                    "plan_type": plan_name
+                }).execute()
+                
+                send_pin_email(customer_email, new_pin, added_credits, plan_name)
+                break 
+                
+            except Exception as e:
+                print(f"Collision or DB Error: {e}")
+                continue
+            
+            return JSONResponse(content={"status": "error", "message
