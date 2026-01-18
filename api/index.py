@@ -94,14 +94,14 @@ html_content = """
     <div class="container">
         <header>
             <h1>AI姓名分割ツール</h1>
-            <p class="subtitle">スプレッドシートやExcelで使える高精度な関数。<br>PINコードを購入して、今すぐ利用開始。</p>
+            <p class="subtitle">スプレッドシートで使える高精度な関数。<br>PINコードを購入して、今すぐ利用開始できます。</p>
         </header>
 
         <div class="plans">
             <div class="card">
                 <div class="plan-name">ライト</div>
                 <div class="price">500<span class="unit">円</span></div>
-                <p class="desc">500件分<br><small>（単価 1.0円）</small></p>
+                <p class="desc">500件分</p>
                 <a href="YOUR_STRIPE_LINK_LITE" class="btn-buy btn-plain" target="_blank">購入する</a>
             </div>
 
@@ -109,14 +109,14 @@ html_content = """
                 <div class="badge">人気 No.1</div>
                 <div class="plan-name">スタンダード</div>
                 <div class="price">2,000<span class="unit">円</span></div>
-                <p class="desc">3,000件分<br><small style="color:#ef4444; font-weight:bold;">（単価 約0.6円 / 1,000件お得）</small></p>
+                <p class="desc">3,000件分</p>
                 <a href="YOUR_STRIPE_LINK_STANDARD" class="btn-buy btn-primary" target="_blank">購入する</a>
             </div>
 
             <div class="card">
                 <div class="plan-name">ビジネス</div>
                 <div class="price">5,000<span class="unit">円</span></div>
-                <p class="desc">10,000件分<br><small>（単価 0.5円 / 大量処理に）</small></p>
+                <p class="desc">10,000件分<br></p>
                 <a href="YOUR_STRIPE_LINK_BUSINESS" class="btn-buy btn-plain" target="_blank">購入する</a>
             </div>
         </div>
