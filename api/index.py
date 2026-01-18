@@ -250,4 +250,60 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
                 print(f"Collision or DB Error: {e}")
                 continue
             
-            return JSONResponse(content={"status": "error", "message
+            return JSONResponse(content={"status": "error", "message": "Failed to generate PIN"}, status_code=500)
+
+    return {"status": "success"}
+
+# --- 2. スプレッドシート用 API (gpt-4o-mini) ---
+@app.get("/api/sheet", response_class=PlainTextResponse)
+async def split_name_sheet(
+    name: str = Query(..., description="分割したい氏名"),
+    pin: str = Query(..., description="購入したPINコード"),
+    target: str = Query("all", description="出力モード: all, last, first")
+):
+    try:
+        res = supabase.table("user_credits").select("*").eq("pin_code", pin).execute()
+    except:
+        return "Error: DB Connection"
+
+    if not res.data:
+        return "Error: 無効なPINコード"
+    
+    user_data = res.data[0]
+    if user_data["credits"] <= 0:
+        return "Error: 残高ゼロ"
+
+    try:
+        chat_completion = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "入力された氏名をJSON形式 {'last_name': '姓', 'first_name': '名'} で返してください。例外処理や余計な文字は不要です。"},
+                {"role": "user", "content": name}
+            ],
+            response_format={"type": "json_object"}
+        )
+        ai_result = json.loads(chat_completion.choices[0].message.content)
+    except Exception as e:
+        return f"Error: AI処理失敗 {str(e)}"
+
+    try:
+        supabase.table("user_credits").update({"credits": user_data["credits"] - 1}).eq("id", user_data["id"]).execute()
+    except:
+        return "Error: 消費処理失敗"
+
+    if target == "last": return ai_result.get('last_name', '')
+    elif target == "first": return ai_result.get('first_name', '')
+    else: return f"{ai_result.get('last_name', '')},{ai_result.get('first_name', '')}"
+
+# --- 3. 残高確認 API ---
+@app.get("/api/balance")
+async def check_balance(pin: str):
+    res = supabase.table("user_credits").select("credits, plan_type").eq("pin_code", pin).execute()
+    if not res.data:
+        return {"valid": False}
+    return {"valid": True, "credits": res.data[0]["credits"], "plan": res.data[0]["plan_type"]}
+
+# --- 4. フロントエンド配信 ---
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    return html_content
