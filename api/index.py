@@ -209,8 +209,10 @@ html_content = """
 # --- メール送信関数 ---
 def send_pin_email(to_email: str, pin_code: str, credits: int, plan_name: str):
     try:
+        # Resendの設定: 独自ドメイン未設定の場合は onboarding@resend.dev を使用
+        # 独自ドメインがある場合は "support@yourdomain.com" などに変更
         resend.Emails.send({
-            "from": "onboarding@resend.dev", # 独自ドメインがあれば変更推奨
+            "from": "onboarding@resend.dev", 
             "to": to_email,
             "subject": "【姓名分割AI】PINコード発行のお知らせ",
             "html": f"""
@@ -249,113 +251,4 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         )
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Invalid signature")
-
-    if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
-        
-        customer_email = session.get("customer_details", {}).get("email")
-        amount_total = session.get("amount_total") # 支払い金額 (日本円)
-
-        # --- 金額によるプラン判定ロジック ---
-        if amount_total == 500:
-            added_credits = 500
-            plan_name = "Light"
-        elif amount_total == 2000:
-            added_credits = 3000  # 1000回お得
-            plan_name = "Standard"
-        elif amount_total == 5000:
-            added_credits = 10000
-            plan_name = "Business"
-        else:
-            # 想定外の金額の場合のフォールバック
-            added_credits = 100
-            plan_name = "Unknown"
-
-        # --- PIN発行 (重複回避リトライ付き) ---
-        max_retries = 5
-        for _ in range(max_retries):
-            # 12桁のPINを生成 (例: AI-X9A2B3C4D5E6)
-            random_part = str(uuid.uuid4()).replace("-", "")[:12].upper()
-            new_pin = f"AI-{random_part}"
-            
-            try:
-                # DB保存
-                supabase.table("user_credits").insert({
-                    "pin_code": new_pin,
-                    "credits": added_credits,
-                    "email": customer_email,
-                    "plan_type": plan_name
-                }).execute()
-                
-                # メール送信
-                send_pin_email(customer_email, new_pin, added_credits, plan_name)
-                break 
-                
-            except Exception as e:
-                print(f"Collision or DB Error: {e}")
-                continue # リトライ
-            
-            # リトライしてもダメだった場合
-            return JSONResponse(content={"status": "error", "message": "Failed to generate PIN"}, status_code=500)
-
-    return {"status": "success"}
-
-# --- 2. スプレッドシート用 API (gpt-4o-mini) ---
-@app.get("/api/sheet", response_class=PlainTextResponse)
-async def split_name_sheet(
-    name: str = Query(..., description="分割したい氏名"),
-    pin: str = Query(..., description="購入したPINコード"),
-    target: str = Query("all", description="出力モード: all, last, first")
-):
-    # PIN確認
-    try:
-        res = supabase.table("user_credits").select("*").eq("pin_code", pin).execute()
-    except:
-        return "Error: DB Connection"
-
-    if not res.data:
-        return "Error: 無効なPINコード"
-    
-    user_data = res.data[0]
-    if user_data["credits"] <= 0:
-        return "Error: 残高ゼロ"
-
-    # AI実行 (gpt-4o-mini)
-    try:
-        chat_completion = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "入力された氏名をJSON形式 {'last_name': '姓', 'first_name': '名'} で返してください。例外処理や余計な文字は不要です。"},
-                {"role": "user", "content": name}
-            ],
-            response_format={"type": "json_object"}
-        )
-        ai_result = json.loads(chat_completion.choices[0].message.content)
-    except Exception as e:
-        return f"Error: AI処理失敗 {str(e)}"
-
-    # 消費
-    try:
-        supabase.table("user_credits").update({"credits": user_data["credits"] - 1}).eq("id", user_data["id"]).execute()
-    except:
-        return "Error: 消費処理失敗"
-
-    # 結果返却
-    if target == "last": return ai_result.get('last_name', '')
-    elif target == "first": return ai_result.get('first_name', '')
-    else: return f"{ai_result.get('last_name', '')},{ai_result.get('first_name', '')}"
-
-# --- 3. 残高確認 API ---
-@app.get("/api/balance")
-async def check_balance(pin: str):
-    res = supabase.table("user_credits").select("credits, plan_type").eq("pin_code", pin).execute()
-    if not res.data:
-        return {"valid": False}
-    return {"valid": True, "credits": res.data[0]["credits"], "plan": res.data[0]["plan_type"]}
-
-# --- 4. フロントエンド配信 ---
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
-    return html_content
+    except stripe.error.SignatureVerificationError
