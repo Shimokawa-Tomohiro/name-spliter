@@ -102,7 +102,7 @@ html_content = """
                 <div class="plan-name">ライト</div>
                 <div class="price">500<span class="unit">円</span></div>
                 <p class="desc">500件分</p>
-                <a href="YOUR_STRIPE_LINK_LITE" class="btn-buy btn-plain" target="_blank">購入する</a>
+                <a href="https://buy.stripe.com/test_8x23coecJfeUay7aSCfbq00" class="btn-buy btn-plain" target="_blank">購入する</a>
             </div>
 
             <div class="card recommended">
@@ -110,14 +110,14 @@ html_content = """
                 <div class="plan-name">スタンダード</div>
                 <div class="price">2,000<span class="unit">円</span></div>
                 <p class="desc">3,000件分</p>
-                <a href="YOUR_STRIPE_LINK_STANDARD" class="btn-buy btn-primary" target="_blank">購入する</a>
+                <a href="https://buy.stripe.com/test_cNi7sE1pX9UA6hR7Gqfbq02" class="btn-buy btn-primary" target="_blank">購入する</a>
             </div>
 
             <div class="card">
                 <div class="plan-name">ビジネス</div>
                 <div class="price">5,000<span class="unit">円</span></div>
                 <p class="desc">10,000件分<br></p>
-                <a href="YOUR_STRIPE_LINK_BUSINESS" class="btn-buy btn-plain" target="_blank">購入する</a>
+                <a href="https://buy.stripe.com/test_6oUbIU9Wt3wc35F6Cmfbq03" class="btn-buy btn-plain" target="_blank">購入する</a>
             </div>
         </div>
 
